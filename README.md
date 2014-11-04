@@ -15,6 +15,7 @@ Table of Contents
     * [get_primary_peers](#get_primary_peers)
     * [get_backup_peers](#get_backup_peers)
     * [set_peer_down](#set_peer_down)
+    * [get_peer](#get_peer)
 * [TODO](#todo)
 * [Compatibility](#compatibility)
 * [Installation](#installation)
@@ -202,6 +203,35 @@ upstream.set_peer_down("bar", true, 1, true)
 will turn down the backup peer corresponding to `server 127.0.0.4 ...`.
 
 You can turn on a peer again by providing a `false` value as the 4th argument.
+
+[Back to TOC](#table-of-contents)
+
+get_peer
+----------------
+`syntax: peer = upstream.get_peer(upstream_name)`
+
+Get the peer that would be used if the given upstream were to be used in the current request. This function will simulate an upstream selection and return the selected peer. This simulation is **not** side-effect free meaning it **will** change the state of the upstream in question (e.g. move round-robin pointer). It also is not a cheap operation because of initializing almost everything (discussed [here](https://github.com/openresty/lua-upstream-nginx-module/issues/7)) about an upstream connection. Still, should be cheaper than connecting to and completing a request cycle with a peer.
+
+The return value is provided by upstream module and is in `ip:port` format.
+
+An example usage would be to configure a redirecting load-balancer much like haproxy redir:
+
+```nginx
+upstream zone {
+    server e1.example.com;
+    server e2.example.com;
+    server e3.example.com;
+}
+
+location / {
+    content_by_lua '
+        local upstream = require "ngx.upstream"
+        local get_peer = upstream.get_peer
+        ngx.header.Location = ngx.var.scheme .. "://" .. get_peer("zone") .. ngx.var.request_uri
+        ngx.exit(302)
+    ';
+}
+```
 
 [Back to TOC](#table-of-contents)
 

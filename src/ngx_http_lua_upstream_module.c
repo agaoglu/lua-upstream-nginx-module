@@ -34,7 +34,7 @@ static ngx_http_upstream_srv_conf_t *
 static ngx_http_upstream_rr_peer_t *
     ngx_http_lua_upstream_lookup_peer(lua_State *L);
 static int ngx_http_lua_upstream_set_peer_down(lua_State * L);
-
+static int ngx_http_lua_upstream_get_peer(lua_State * L);
 
 static ngx_http_module_t ngx_http_lua_upstream_ctx = {
     NULL,                           /* preconfiguration */
@@ -97,6 +97,9 @@ ngx_http_lua_upstream_create_module(lua_State * L)
 
     lua_pushcfunction(L, ngx_http_lua_upstream_set_peer_down);
     lua_setfield(L, -2, "set_peer_down");
+
+    lua_pushcfunction(L, ngx_http_lua_upstream_get_peer);
+    lua_setfield(L, -2, "get_peer");
 
     return 1;
 }
@@ -528,4 +531,47 @@ ngx_http_lua_upstream_find_upstream(lua_State *L, ngx_str_t *host)
     }
 
     return NULL;
+}
+
+static int
+ngx_http_lua_upstream_get_peer(lua_State * L)
+{
+    ngx_str_t                             host;
+    ngx_http_upstream_srv_conf_t         *us;
+    ngx_http_request_t                   *r;
+    ngx_peer_connection_t                *pc;
+
+    if (lua_gettop(L) != 1) {
+        return luaL_error(L, "exactly one argument expected");
+    }
+
+    r = ngx_http_lua_get_request(L);
+
+    if (r == NULL) {
+        return luaL_error(L, "must use in a request context");
+    }
+
+    host.data = (u_char *) luaL_checklstring(L, 1, &host.len);
+
+    us = ngx_http_lua_upstream_find_upstream(L, &host);
+    if (us == NULL) {
+        return luaL_error(L, "upstream not found");
+    }
+
+    if (us->servers == NULL || us->servers->nelts == 0) {
+        return luaL_error(L, "upstream has no defined servers");
+    }
+    if (ngx_http_upstream_create(r) != NGX_OK) {
+        return luaL_error(L, "cannot create upstream");
+    }
+    if (us->peer.init(r, us) != NGX_OK) {
+        return luaL_error(L, "cannot init peer");
+    }
+    pc = &r->upstream->peer;
+    if (pc->get(pc, pc->data) != NGX_OK) {
+        return luaL_error(L, "cannot get peer");
+    }
+
+    lua_pushlstring(L, (char *) pc->name->data, pc->name->len);
+    return 1;
 }
